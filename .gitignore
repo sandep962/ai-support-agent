@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.pyc
+*.log
+.env
+.env.*
+.venv/
+venv/
+/results/apple_support/apple_support_pairs.csv
+results/apple_support/apple_support_pairs.csv
+/results/apple_support/

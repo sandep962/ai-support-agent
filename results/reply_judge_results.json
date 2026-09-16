@@ -1,0 +1,26 @@
+{
+  "model": "llama3.2",
+  "examples": 50,
+  "judgments": 100,
+  "NO_RAG": {
+    "mean_relevance": 3.6,
+    "mean_groundedness": 1.86,
+    "mean_tone": 4.98,
+    "mean_overall": 3.78,
+    "median_overall": 4.0
+  },
+  "RAG": {
+    "mean_relevance": 4.16,
+    "mean_groundedness": 4.38,
+    "mean_tone": 5.0,
+    "mean_overall": 4.16,
+    "median_overall": 4.0
+  },
+  "paired_comparison": {
+    "rag_overall_greater": 18,
+    "no_rag_overall_greater": 0,
+    "tied": 32,
+    "average_score_difference_rag_minus_no_rag": 0.38
+  },
+  "note": "Scores are LLM-judge outputs; no statistical significance is claimed."
+}

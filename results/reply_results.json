@@ -1,0 +1,17 @@
+{
+  "model": "llama3.2",
+  "examples": 50,
+  "successful_generations": 100,
+  "successful_examples": 50,
+  "failed_generations": 0,
+  "no_rag_failed": 0,
+  "rag_failed": 0,
+  "retrieval_statistics": {
+    "eligible_historical_pairs": 106207,
+    "retrieved_cases": 150,
+    "average_retrieval_similarity": 0.2904472946936826,
+    "same_intent_historical_cases_available": 50
+  },
+  "selection_seed": 20260916,
+  "comparison_note": "This experiment saves outputs only; no claim about reply quality improvement is made."
+}

@@ -1,0 +1,9 @@
+{
+  "model": "majority_baseline",
+  "majority_label": "2",
+  "n": 250,
+  "accuracy": 0.248,
+  "macro_precision": 0.027555555555555555,
+  "macro_recall": 0.1111111111111111,
+  "macro_f1": 0.04415954415954416
+}

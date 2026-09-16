@@ -1,0 +1,23 @@
+{
+  "human_reviewed_rows": 40,
+  "joined_rows": 40,
+  "metrics": {
+    "relevance": {
+      "weighted_cohen_kappa": 0.2569002123142252,
+      "spearman_correlation": 0.24431595979077128
+    },
+    "groundedness": {
+      "weighted_cohen_kappa": -0.14519427402862983,
+      "spearman_correlation": -0.13635387914121558
+    },
+    "tone": {
+      "weighted_cohen_kappa": 0.0,
+      "spearman_correlation": NaN
+    },
+    "overall": {
+      "weighted_cohen_kappa": 0.1228070175438597,
+      "spearman_correlation": 0.16141499573223136
+    }
+  },
+  "note": "Agreement statistics are descriptive; no statistical significance is claimed."
+}
