@@ -1,183 +1,209 @@
 # Hiver Support Agent
 
-## 1. Project overview
+An evaluated AI customer-support agent built for the Hiver SDE Intern take-home assignment.
 
-This project evaluates a support agent for one brand: Apple Support. The agent has three responsibilities:
+The system uses Apple Support as the target brand and is designed around three tasks:
 
-1. classify a customer message into the frozen eight-intent taxonomy plus `OTHER_OR_AMBIGUOUS`;
-2. retrieve historically similar Apple customer-to-support cases and draft a grounded reply;
-3. decide whether the message can be auto-handled or should be escalated to a human.
+1. **Intent classification** — classify an incoming customer message into a small, fixed taxonomy of support intents.
+2. **Historically grounded reply generation** — retrieve similar Apple customer-support interactions and use them as evidence when drafting a response.
+3. **Escalation** — decide whether the issue can be handled automatically or should be sent to a human, with a reason.
 
-The final one-message interface is `src.pipeline.SupportAgentPipeline`. It returns intent, confidence, draft reply, escalation decision, escalation reason, and retrieved historical evidence. The project does not include a frontend, API server, deployment system, authentication, or production policy system.
+The project focuses on **evaluation, reproducibility, and failure analysis**, not just building a demo.
 
-## 2. Architecture
+---
+
+## 1. Problem framing
+
+The goal is not to build a production-ready customer-support platform. The goal is to determine whether a lightweight AI support agent can reliably perform three support tasks on noisy real-world customer messages.
+
+For this project, a good system should:
+
+- identify the customer's primary support intent;
+- produce a relevant response grounded in how the brand historically handled similar cases;
+- avoid inventing policies, guarantees, or unsupported troubleshooting steps;
+- escalate issues that reasonably require human intervention;
+- provide measurable evidence of where the system works and where it fails.
+
+The project deliberately does **not** include a frontend, authentication system, deployment infrastructure, production policy engine, or production customer-data integrations.
+
+---
+
+## 2. How I built this
+
+The project was developed as a sequence of measurable components rather than starting with a final chatbot.
+
+### Step 1 — Dataset inspection
+
+I started with the **Customer Support on Twitter (TWCS)** dataset and selected **Apple Support** as the target brand.
+
+The dataset contains customer tweets, support responses, timestamps, and response-link fields. These links were used to reconstruct customer → support interactions.
+
+The repository records the dataset inspection in:
+
+`results/dataset_inspection.md`
+
+### Step 2 — Historical support corpus
+
+Apple Support conversations were reconstructed into customer → support pairs.
+
+These historical interactions form the evidence corpus used by the reply-generation experiment.
+
+The derived Apple Support analysis artifacts are stored under:
+
+`results/apple_support/`
+
+The full reconstructed corpus is intentionally not committed to Git because it is a large derived dataset. The source dataset should be obtained according to its original provider's terms.
+
+### Step 3 — Frozen intent taxonomy
+
+I defined a small taxonomy from the Apple Support data and froze it before evaluation.
+
+The system uses eight intents plus `OTHER_OR_AMBIGUOUS`:
+
+| ID | Intent |
+|---|---|
+| 1 | Device hardware / charging / physical functionality |
+| 2 | iOS and software behavior / updates |
+| 3 | Apple ID and account access |
+| 4 | iCloud, backup, restore, and data sync |
+| 5 | Apps / App Store / media downloads |
+| 6 | Billing, payments, subscriptions, refunds |
+| 7 | Connectivity: Wi-Fi / Bluetooth / cellular / calls |
+| 8 | Orders, repair, replacement, store, delivery |
+| OTHER_OR_AMBIGUOUS | Insufficient or unclear information |
+
+For messages containing multiple issues, the label represents the customer's **primary reason for seeking support**.
+
+### Step 4 — Held-out golden evaluation set
+
+I created a **250-example reviewed golden set** for evaluation.
+
+The golden examples are kept separate from the conventional training data and from historical retrieval so that the evaluation does not directly leak test examples into the system.
+
+The golden set is stored in:
+
+`evaluation/golden_set.csv`
+
+### Step 5 — Baselines
+
+Before evaluating the LLM classifier, I established two baselines:
+
+- a trivial majority-class baseline;
+- TF-IDF + Logistic Regression trained on 2,700 non-golden weak/silver-labelled examples.
+
+This provides a simple reference point for determining whether the LLM actually adds value.
+
+### Step 6 — LLM intent classifier
+
+I evaluated a local **Llama 3.2** classifier against the same 250-example golden set.
+
+The LLM result was not assumed to be better simply because it was more sophisticated.
+
+In fact, the Llama classifier performed below the TF-IDF + Logistic Regression baseline on the headline intent metrics. That result is retained as-is and forms part of the failure analysis.
+
+### Step 7 — Historically grounded reply generation
+
+For reply generation, I ran a controlled experiment using the same Llama 3.2 model:
+
+- **NO_RAG:** customer message + predicted intent;
+- **RAG:** customer message + predicted intent + three retrieved historical customer → support cases.
+
+The historical cases were retrieved using TF-IDF similarity, with preference for cases matching the predicted intent when available.
+
+The experiment was run on 50 deterministic golden examples.
+
+This makes the RAG comparison an ablation rather than a comparison between unrelated systems.
+
+### Step 8 — LLM reply judge
+
+The 50-example reply experiment was evaluated using an independent LLM judge.
+
+Each reply was scored on:
+
+- relevance;
+- groundedness;
+- tone;
+- overall quality.
+
+The judge scores are stored in:
+
+`results/reply_judge_scores.csv`
+
+and
+
+`results/reply_judge_results.json`
+
+### Step 9 — Human agreement check
+
+I did not treat the LLM judge as ground truth.
+
+A separate 40-reply sample was manually evaluated and compared against the LLM judge using weighted Cohen's kappa and Spearman correlation.
+
+The agreement results are stored in:
+
+`results/judge_human_agreement.json`
+
+The agreement was limited, particularly for groundedness, so the judge is treated as a supporting evaluation signal rather than a replacement for human evaluation.
+
+### Step 10 — Escalation evaluation
+
+I manually labeled all 250 golden examples for whether the issue reasonably required human escalation.
+
+The escalation model was then evaluated against those labels.
+
+The resulting analysis showed that escalation accuracy alone was misleading because the system missed many cases that should have been escalated. The false-negative rate is therefore explicitly reported.
+
+---
+
+## 3. Architecture
 
 ```text
+                    customer_text
+                         |
+                         v
+              +----------------------+
+              | Llama 3.2 Intent     |
+              | Classifier            |
+              +----------------------+
+                         |
+                         v
+              predicted intent
+                         |
+                         v
+              +----------------------+
+              | TF-IDF Historical    |
+              | Retrieval            |
+              +----------------------+
+                         |
+              top 3 historical cases
+                         |
+                         v
+              +----------------------+
+              | Llama 3.2 Reply      |
+              | Generator            |
+              +----------------------+
+                         |
+                         v
+                    draft_reply
+
+
 customer_text
-      |
-      v
-Llama 3.2 intent classifier
-      |
-      v
-TF-IDF retrieval over non-golden Apple customer->support pairs
-      |
-      v
-Llama 3.2 historically grounded reply draft
-      |
-      v
-Llama 3.2 escalation predictor
-      |
-      v
-structured support-agent result
-```
+     |
+     v
++----------------------+
+| Llama 3.2 Escalation |
+| Predictor            |
++----------------------+
+     |
+     v
+escalate + reason
 
-## 3. Repository structure
 
-```text
-HIVER/
-  src/              classifier, retrieval, reply, escalation, pipeline
-  baselines/        majority and TF-IDF + Logistic Regression
-  evaluation/       golden data and evaluation scripts
-  results/          saved predictions and metrics
-  analysis/         component and final analyses
-  report/           final assignment report
-```
-
-## 4. Dataset source and citation
-
-The source is the TWCS customer-service Twitter dataset, read from `twcs.csv`. The repository inspection recorded 2,811,774 rows, original text, inbound/outbound flags, and response-link columns in [results/dataset_inspection.md](results/dataset_inspection.md). AppleSupport outbound messages were linked to inbound customer parents to construct historical customer-to-support pairs.
-
-The final retrieval experiment used 106,207 eligible non-golden historical cases. The derived AppleSupport artifacts are under `results/apple_support/`.
-
-## 5. Dataset/license note
-
-The original TWCS source is not copied into this repository and was inspected read-only. Follow the original dataset provider's terms and license when obtaining or redistributing it. Derived files contain public-support text and identifiers; review applicable dataset and platform terms before external redistribution. No new license for the source dataset is asserted here.
-
-## 6. Environment/setup
-
-Run commands from the repository root (`HIVER`):
-
-```powershell
-python -m pip install scikit-learn pandas scipy
-```
-
-The local Ollama integration uses Python's standard-library HTTP client; no OpenAI API key is required.
-
-## 7. Ollama llama3.2 setup
-
-Install Ollama, start the local server, and install the requested model:
-
-```powershell
-ollama pull llama3.2
-```
-
-The code defaults to `http://localhost:11434` and `OLLAMA_MODEL=llama3.2`. Override with `OLLAMA_HOST` or `OLLAMA_MODEL` when needed.
-
-## 8. Run the pipeline on one customer message
-
-```powershell
-python -c "from src.pipeline import SupportAgentPipeline; import json; print(json.dumps(SupportAgentPipeline().predict('My iPhone keeps freezing after the latest iOS update.'), indent=2))"
-```
-
-Run the three-message smoke test with:
-
-```powershell
-python src/pipeline.py
-```
-
-The pipeline uses only the incoming `customer_text` as model input. Retrieval excludes golden customer IDs and their reconstructed conversations.
-
-## 9. Reproduce intent evaluation
-
-Saved JSON/CSV files under `results/` are completed evaluation artifacts. To rerun the local model against the held-out 250-row golden set:
-
-```powershell
-python evaluation/evaluate_ai_classifier.py
-```
-
-This reruns 250 Ollama calls. It does not retrain the classifier or use golden rows for training. The simple baselines can be rerun with:
-
-```powershell
-python baselines/majority.py --golden evaluation/golden_set.csv
-python baselines/tfidf_logistic.py --train data/silver_train.csv --golden evaluation/golden_set.csv
-```
-
-## 10. Reproduce reply/RAG evaluation
-
-The saved reply artifacts contain the completed 50-example NO_RAG versus RAG experiment. To rerun generation and overwrite those experiment outputs:
-
-```powershell
-python evaluation/evaluate_replies.py
-```
-
-This uses 50 deterministic golden examples, retrieves three non-golden historical cases per example, and makes 100 generation calls. The LLM-judge evaluation is separate:
-
-```powershell
-python evaluation/evaluate_reply_quality.py
-```
-
-The human reply agreement sample contains 40 replies and is not regenerated by these commands.
-
-## 11. Reproduce escalation evaluation
-
-The saved escalation labels are the manually reviewed 250-example held-out set. To rerun local Ollama escalation prediction and scoring:
-
-```powershell
-python evaluation/evaluate_escalation.py
-```
-
-It reads `customer_text` for prediction and compares predictions with completed `escalate_gold` labels during evaluation.
-
-## 12. Run failure analysis
-
-Completed analysis artifacts are saved under `analysis/`:
-
-- `ai_classifier_failure_analysis.md`
-- `escalation_failure_analysis.md`
-- `final_failure_analysis.md`
-- `headline_number_caveats.md`
-- `decision_log.md`
-
-These are analysis documents, not additional model runs.
-
-## 13. Headline results
-
-| Evaluation | Metric | Result |
-|---|---|---:|
-| Majority intent | Accuracy | 0.248 |
-| Majority intent | Macro F1 | 0.0441595 |
-| TF-IDF + Logistic Regression | Accuracy | 0.624 |
-| TF-IDF + Logistic Regression | Macro F1 | 0.5647142 |
-| Llama 3.2 intent | Accuracy | 0.524 |
-| Llama 3.2 intent | Macro F1 | 0.5159378 |
-| NO_RAG reply judge | Mean overall | 3.78 |
-| RAG reply judge | Mean overall | 4.16 |
-| Escalation | Accuracy | 0.812 |
-| Escalation | Recall | 0.2909 |
-| Escalation | False-negative rate | 0.7091 |
-
-The Llama intent classifier did not beat the simple TF-IDF + Logistic Regression baseline. Reply scores are LLM-judge results from 50 examples, not definitive human-quality measurements. Escalation accuracy is misleading without its 70.91% false-negative rate.
-
-## 14. Limitations
-
-- The intent evaluation uses 250 reviewed examples with uneven class support.
-- Silver training labels for the conventional baseline are weak rule-based labels, not human labels.
-- Historical AppleSupport responses may contain outdated links, products, routing, or policies.
-- TF-IDF similarity does not prove that a retrieved response supports a generated claim.
-- Reply quality uses a 50-example ablation and an imperfect LLM judge; human agreement was low.
-- Escalation has a high false-negative rate and should not be treated as safe automatic routing.
-- The experiments are Apple-specific and are not validated across other support brands.
-
-## 15. Decision log
-
-See [analysis/decision_log.md](analysis/decision_log.md) for non-obvious engineering decisions, alternatives, and evidence/trade-offs.
-
-## 16. Evaluation methodology
-
-The intent golden set contains 250 held-out reviewed customer messages. Golden examples and their reconstructed conversations are excluded from training and retrieval. Intent metrics use accuracy, macro precision, macro recall, macro F1, per-class metrics, and a confusion matrix. The conventional baseline trains only on 2,700 non-golden weak/silver rows.
-
-Reply evaluation compares the same Llama 3.2 model with and without three retrieved historical cases on 50 deterministic golden examples. The LLM judge scores relevance, groundedness, tone, and overall quality from 1 to 5. A separate 40-reply human sample measures weighted Cohen's kappa and Spearman correlation against the judge.
-
-Escalation evaluation uses 250 manually labeled examples and reports accuracy, precision, recall, F1, confusion matrix, false-positive count, false-negative count, and false-negative rate. Recall and false-negative rate are emphasized because missed human escalation is the higher-risk error.
-
-Saved artifacts are completed outputs; rerunning model commands can produce different outputs. The held-out golden set is an evaluation input, not training data. Reproducing these experiments does not require the full 3M-row source dataset once the derived repository artifacts are present.
+Final structured result
+-----------------------
+intent
+confidence
+draft_reply
+escalate
+escalation_reason
+evidence_ids
